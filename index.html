@@ -439,11 +439,11 @@ textarea.field-input { resize: none; min-height: 52px; font-size: 13px; }
     <div class="scan-label">SCAN BARCODE</div>
     <button class="btn-scan-close" onclick="closeScanner()">Cancel</button>
   </div>
-  <video id="scanner-video" autoplay playsinline muted></video>
+  <div id="scanner-video" style="width:100%;height:100%;position:relative;"></div>
   <div class="scan-frame">
     <div class="scan-box">
       <div class="scan-line"></div>
-      <div class="scan-hint">Align barcode within frame</div>
+      <div class="scan-hint" id="scan-hint">Align barcode within frame</div>
     </div>
   </div>
 </div>
@@ -654,61 +654,95 @@ function clearAll() {
 
 save(); // init badge
 </script>
-<!-- ZXing barcode scanner -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/zxing-js/0.20.0/zxing.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
-// ── SCANNER ──
-let scanReader = null;
-let scanStream = null;
+// ── SCANNER — html5-qrcode (works Samsung Browser, Chrome, Safari) ──
+let html5QrCode = null;
+let scanActive = false;
 
 async function openScanner() {
-  const overlay = document.getElementById('scan-overlay');
-  overlay.classList.add('open');
+  document.getElementById('scan-overlay').classList.add('open');
+  scanActive = true;
+  setHint('Starting camera…');
+
+  // small delay so overlay renders first
+  await new Promise(r => setTimeout(r, 120));
 
   try {
-    const hints = new Map();
-    const formats = [
-      ZXing.BarcodeFormat.EAN_13,
-      ZXing.BarcodeFormat.EAN_8,
-      ZXing.BarcodeFormat.UPC_A,
-      ZXing.BarcodeFormat.UPC_E,
-      ZXing.BarcodeFormat.CODE_128,
-      ZXing.BarcodeFormat.CODE_39,
-    ];
-    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
+    html5QrCode = new Html5Qrcode('scanner-video');
 
-    scanReader = new ZXing.BrowserMultiFormatReader(hints);
+    const config = {
+      fps: 10,
+      qrbox: { width: 240, height: 100 },
+      aspectRatio: 1.7,
+      supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA],
+      formatsToSupport: [
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E,
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.ITF,
+      ]
+    };
 
-    const video = document.getElementById('scanner-video');
-    const constraints = { video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } };
-    scanStream = await navigator.mediaDevices.getUserMedia(constraints);
-    video.srcObject = scanStream;
+    await html5QrCode.start(
+      { facingMode: 'environment' },
+      config,
+      (decodedText) => { onDetected(decodedText); },
+      (errorMsg) => { /* ignore per-frame errors */ }
+    );
 
-    scanReader.decodeFromStream(scanStream, video, (result, err) => {
-      if (result) {
-        const code = result.getText();
-        document.getElementById('f-upc').value = code;
-        closeScanner();
-        toast('Scanned: ' + code);
-        // focus next field
-        setTimeout(() => document.getElementById('f-name').focus(), 300);
-      }
-    });
+    setHint('Align barcode within frame');
+
   } catch (err) {
     closeScanner();
-    if (err.name === 'NotAllowedError') {
+    const msg = (err || '').toString().toLowerCase();
+    if (msg.includes('permission') || msg.includes('denied') || msg.includes('notallowed')) {
       toast('Camera permission denied');
+      showPermissionTip();
+    } else if (msg.includes('notfound') || msg.includes('no camera')) {
+      toast('No camera found');
     } else {
-      toast('Camera unavailable');
+      toast('Camera error — try Chrome browser');
     }
   }
 }
 
-function closeScanner() {
+function onDetected(code) {
+  if (!code || !scanActive) return;
+  document.getElementById('f-upc').value = code;
+  closeScanner();
+  toast('✓  ' + code);
+  setTimeout(() => document.getElementById('f-name').focus(), 350);
+}
+
+function setHint(msg) {
+  const h = document.getElementById('scan-hint');
+  if (h) h.textContent = msg;
+}
+
+async function closeScanner() {
+  scanActive = false;
+  if (html5QrCode) {
+    try {
+      const state = html5QrCode.getState();
+      if (state === Html5QrcodeScannerState.SCANNING || state === Html5QrcodeScannerState.PAUSED) {
+        await html5QrCode.stop();
+      }
+    } catch(e) {}
+    try { html5QrCode.clear(); } catch(e) {}
+    html5QrCode = null;
+  }
   document.getElementById('scan-overlay').classList.remove('open');
-  if (scanReader) { try { scanReader.reset(); } catch(e){} scanReader = null; }
-  if (scanStream) { scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
+}
+
+function showPermissionTip() {
+  // small helper toast sequence
+  setTimeout(() => toast('Samsung: Settings → Apps → Browser → Permissions → Camera → Allow'), 2500);
 }
 </script>
 </body>
 </html>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
